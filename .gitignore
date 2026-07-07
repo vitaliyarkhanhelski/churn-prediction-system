@@ -1,0 +1,52 @@
+# Dane i modele (wrażliwe / duże pliki)
+data/
+datasets/
+*.csv
+*.xlsx
+*.xls
+models/
+*.pkl
+*.joblib
+*.h5
+
+# Pliki środowiskowe i klucze
+.env
+.env.*
+*.key
+secrets.toml
+.streamlit/secrets.toml
+
+# Notatki i dokumenty robocze (prywatne)
+_robocze/
+
+# N8N lokalne dane
+n8n_data/
+.n8n/
+
+# Runs / logi
+runs/
+logs/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# macOS
+.DS_Store
+.AppleDouble
+
+# IDE
+.vscode/
+.idea/
+*.swp
