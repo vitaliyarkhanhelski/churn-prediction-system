@@ -4,7 +4,7 @@ datasets/
 *.csv
 *.xlsx
 *.xls
-models/
+main/models/
 *.pkl
 *.joblib
 *.h5
