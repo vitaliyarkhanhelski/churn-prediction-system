@@ -12,6 +12,14 @@ EMAIL_REGEX = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
 
 sys.path.insert(0, os.path.dirname(__file__))
 from predict_churn import run_prediction
+from langgraph_agent import run_agent
+
+
+def _handle_email_send():
+    """on_click callback – ustawia flagę wysyłania."""
+    if st.session_state.get("df_final") is None:
+        return
+    st.session_state["sending_emails"] = True
 
 st.set_page_config(
     page_title="Churn Prediction System",
@@ -22,7 +30,7 @@ st.set_page_config(
 with open(os.path.join(os.path.dirname(__file__), "style.css")) as _f:
     st.markdown(f"<style>{_f.read()}</style>", unsafe_allow_html=True)
 
-# --- Pending toast (pokazywany po st.rerun()) ---
+# --- Toast po rerun ---
 if "pending_toast" in st.session_state:
     msg, icon = st.session_state.pop("pending_toast")
     st.toast(msg, icon=icon)
@@ -106,7 +114,11 @@ if uploaded_file is not None:
         f"({len(df_uploaded)} rekordów, {len(df_uploaded.columns)} kolumn)"
     )
     with st.expander("Podgląd danych", expanded=True):
-        st.dataframe(df_uploaded, use_container_width=True, height=350)
+        rows = len(df_uploaded)
+        row_height = 35
+        header = 38
+        preview_height = min(rows, 10) * row_height + header
+        st.dataframe(df_uploaded, use_container_width=True, height=preview_height)
 else:
     df_uploaded = None
     if "last_filename" in st.session_state:
@@ -166,18 +178,18 @@ if run_button and ready:
     progress = st.progress(0, text="Uruchamianie pipeline...")
     try:
         progress.progress(15, text="⏳ Ładowanie modeli z dysku...")
-        time.sleep(0.8)
+        time.sleep(0.5)
         progress.progress(40, text="🤖 Wyliczanie prawdopodobieństwa odejścia (Voting Model)...")
-        time.sleep(0.8)
+        time.sleep(0.5)
         progress.progress(65, text="🔍 Analiza przyczyn (SHAP / XGBoost)...")
-        time.sleep(0.8)
+        time.sleep(0.5)
         progress.progress(85, text="📊 Generowanie flag marketingowych...")
 
         df_final, shap_vals = run_prediction(df_uploaded, strategy=strategy)
 
         df_final.insert(1, "account_manager_email", manager_email)
 
-        time.sleep(0.8)
+        time.sleep(0.5)
         progress.progress(100, text="✅ Gotowe!")
 
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -214,7 +226,7 @@ if "df_final" in st.session_state:
     # --- Tabela: klienci z flagą ---
     df_flagged = df_final[df_final["marketing_action"] == 1].copy()
 
-    with st.expander(f"🚨 Klienci wymagający działania – {len(df_flagged)} os.", expanded=True):
+    with st.expander(f"🚨 Klienci wymagający działania – {len(df_flagged)} os.", expanded=False):
         if df_flagged.empty:
             st.warning("Brak klientów spełniających kryterium dla wybranej strategii.")
         else:
@@ -243,41 +255,64 @@ if "df_final" in st.session_state:
         st.dataframe(styled, use_container_width=True, hide_index=True)
 
     # --- Pobierz / Wyślij e-maile ---
-    col_dl, col_email, _ = st.columns([1, 1, 2])
-    with col_dl:
-        st.download_button(
-            "⬇ Pobierz wyniki CSV",
-            data=df_final.to_csv(index=False),
-            file_name=output_filename,
-            mime="text/csv",
-            use_container_width=True,
-        )
     emails_sent_key = f"emails_sent_{output_filename}"
-    already_sent = st.session_state.get(emails_sent_key, False)
+    already_sent    = st.session_state.get(emails_sent_key, False)
+    is_sending      = st.session_state.get("sending_emails", False)
 
-    with col_email:
-        send_button = st.button(
-            "✅ E-maile wysłane" if already_sent else "📧 Wyślij e-maile",
-            type="primary",
-            use_container_width=True,
-            disabled=already_sent,
-            help="E-maile zostały już wysłane dla tego uruchomienia." if already_sent else "Wysyła powiadomienia e-mail do opiekuna klientów zagrożonych odejściem",
-        )
+    # st.empty() – spinner ZASTĘPUJE przyciski w tym samym miejscu DOM (brak podwójnych)
+    actions_slot = st.empty()
 
-    if send_button and not already_sent:
-        n_at_risk = int(df_final["marketing_action"].sum())
-        if n_at_risk > 0:
-            st.session_state[emails_sent_key] = True
-            st.session_state["pending_toast"] = (
-                f"✅ E-maile zostały wysłane – {n_at_risk} klient{'ów' if n_at_risk != 1 else ''} zagrożon{'ych' if n_at_risk != 1 else 'y'} odejściem.",
-                "📧",
-            )
+    if is_sending:
+        with actions_slot.container():
+            n_at_risk     = int(df_final["marketing_action"].sum())
+            manager_email = st.session_state.get("manager_email", "")
+            with st.spinner(f"Generowanie i wysyłanie {n_at_risk} e-mail{'i' if n_at_risk != 1 else 'a'} przez AI..."):
+                if n_at_risk > 0:
+                    errors = run_agent(df_flagged, to_email=manager_email)
+                    if errors:
+                        st.session_state["email_success_msg"] = f"⚠️ Wysłano z błędami: {'; '.join(errors)}"
+                        st.session_state["pending_toast"] = (f"⚠️ Wysłano z błędami: {errors[0]}", "⚠️")
+                    else:
+                        msg = (
+                            f"E-maile wysłane – {n_at_risk} klient{'ów' if n_at_risk != 1 else ''} "
+                            f"zagrożon{'ych' if n_at_risk != 1 else 'y'} odejściem. Logi w folderze emails/."
+                        )
+                        st.session_state["email_success_msg"] = msg
+                        st.session_state["pending_toast"] = (f"✅ {msg}", "📧")
+                else:
+                    msg = "Brak klientów zagrożonych odejściem – e-maile nie zostały wysłane."
+                    st.session_state["email_success_msg"] = msg
+                    st.session_state["pending_toast"] = (msg, "ℹ️")
+            st.session_state["sending_emails"] = False
+            st.session_state[emails_sent_key]  = True
             st.rerun()
+    else:
+        with actions_slot.container():
+            col_dl, col_email, _ = st.columns([1, 1, 2])
+            with col_dl:
+                st.download_button(
+                    "⬇ Pobierz wyniki CSV",
+                    data=df_final.to_csv(index=False),
+                    file_name=output_filename,
+                    mime="text/csv",
+                    use_container_width=True,
+                )
+            with col_email:
+                st.button(
+                    "✅ E-maile wysłane" if already_sent else "📧 Wyślij e-maile",
+                    type="primary",
+                    use_container_width=True,
+                    disabled=already_sent,
+                    on_click=_handle_email_send,
+                    help="E-maile zostały już wysłane dla tego uruchomienia." if already_sent else "Wysyła powiadomienia e-mail do opiekuna klientów zagrożonych odejściem",
+                )
+
+    if "email_success_msg" in st.session_state:
+        msg = st.session_state["email_success_msg"]
+        if "Brak klientów" in msg or "błędy" in msg.lower():
+            st.warning(msg)
         else:
-            st.toast(
-                "ℹ️ E-maile nie zostały wysłane – brak klientów zagrożonych odejściem.",
-                icon="ℹ️",
-            )
+            st.success(msg)
 
     # =============================================
     # --- SHAP Waterfall – analiza klienta ---
@@ -299,7 +334,7 @@ if "df_final" in st.session_state:
 
         col_prob, col_flag = st.columns(2)
         with col_prob:
-            st.metric("Ryzyko churnu", f"{churn_prob * 100:.1f}%")
+            st.metric("Ryzyko odejścia", f"{churn_prob * 100:.1f}%")
         with col_flag:
             st.metric(
                 "Działanie marketingowe",
@@ -311,3 +346,4 @@ if "df_final" in st.session_state:
             fig, ax = plt.subplots(figsize=(6, 4))
             shap.plots.waterfall(shap_vals[row_pos], show=False)
             st.pyplot(plt.gcf(), clear_figure=True)
+
