@@ -55,6 +55,31 @@ with st.sidebar:
     strategy = "precyzyjny" if "Precyzyjny" in strategy_label else "szeroki"
 
     st.markdown("---")
+    st.caption("Model AI (generowanie e-maili)")
+    model_choice = st.radio(
+        label="Wybierz model",
+        options=["☁️ OpenAI GPT-4o", "🦙 Bielik (lokalnie)"],
+        index=0,
+        help=(
+            "**OpenAI GPT-4o** – szybki (~10s dla 4 e-maili), wymaga klucza API. "
+            "Wysyła dane do chmury OpenAI.\n\n"
+            "**Bielik (lokalnie)** – darmowy, dane zostają na Twoim komputerze. "
+            "Wymaga uruchomionego Ollama (`ollama serve`). ~20s/e-mail sekwencyjnie."
+        ),
+    )
+    model_backend = "ollama" if "Bielik" in model_choice else "openai"
+
+    if model_backend == "ollama":
+        import urllib.request
+        try:
+            urllib.request.urlopen("http://localhost:11434", timeout=1)
+            st.caption("🆓 Bezpłatny · dane zostają lokalnie · wolniejszy (e-maile generowane jeden po drugim)")
+        except Exception:
+            st.warning("Ollama nie działa. Uruchom: `ollama serve`")
+    else:
+        st.caption("⚡ Kilka e-maili jednocześnie · wymaga klucza OpenAI")
+
+    st.markdown("---")
     st.caption("v0.2 – POC")
 
 # --- Header ---
@@ -170,7 +195,8 @@ with status_col:
             f"✅ Gotowe do uruchomienia\n\n"
             f"**Rekordów:** {len(df_uploaded)}  \n"
             f"**Strategia:** {strategy_label}  \n"
-            f"**Opiekun:** `{manager_email}`"
+            f"**Opiekun:** `{manager_email}`  \n"
+            f"**Model AI:** {model_choice}"
         )
 
 # --- Uruchomienie pipeline i zapis do session_state ---
@@ -268,7 +294,7 @@ if "df_final" in st.session_state:
             manager_email = st.session_state.get("manager_email", "")
             with st.spinner(f"Generowanie i wysyłanie {n_at_risk} e-mail{'i' if n_at_risk != 1 else 'a'} przez AI..."):
                 if n_at_risk > 0:
-                    errors = run_agent(df_flagged, to_email=manager_email)
+                    errors = run_agent(df_flagged, to_email=manager_email, model_backend=model_backend)
                     if errors:
                         st.session_state["email_success_msg"] = f"⚠️ Wysłano z błędami: {'; '.join(errors)}"
                         st.session_state["pending_toast"] = (f"⚠️ Wysłano z błędami: {errors[0]}", "⚠️")

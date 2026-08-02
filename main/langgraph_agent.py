@@ -29,7 +29,14 @@ load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 EMAILS_DIR = os.path.join(os.path.dirname(__file__), "emails")
 os.makedirs(EMAILS_DIR, exist_ok=True)
 
-model_low = init_chat_model(model="gpt-4o-mini", temperature=0)
+OLLAMA_MODEL = "SpeakLeash/bielik-11b-v2.3-instruct:Q4_K_M"
+
+def _get_model(backend: str):
+    if backend == "ollama":
+        from langchain_ollama import ChatOllama
+        return ChatOllama(model=OLLAMA_MODEL, temperature=0)
+    return init_chat_model(model="gpt-4o", temperature=0)
+
 
 
 # ---------------------------------------------------------------------------
@@ -76,33 +83,35 @@ def _shap_to_text(raw: dict) -> str:
     return "\n".join(lines)
 
 
-def explain_shap(stan: StanGrafu) -> dict:
-    shap_text = _shap_to_text(stan["Json_shap"]["feature_importance"])
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", EXPLAIN_SHAP_SYSTEM),
-        ("human",  EXPLAIN_SHAP_HUMAN),
-    ])
-    result = model_low.invoke(
-        prompt.invoke({"dane_analiza": shap_text})
-    )
-    return {"data_work": result.content}
+def _make_nodes(model):
+    """Zwraca węzły grafu zamknięte na dany model."""
 
+    def explain_shap(stan: StanGrafu) -> dict:
+        shap_text = _shap_to_text(stan["Json_shap"]["feature_importance"])
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", EXPLAIN_SHAP_SYSTEM),
+            ("human",  EXPLAIN_SHAP_HUMAN),
+        ])
+        result = model.invoke(prompt.invoke({"dane_analiza": shap_text}))
+        return {"data_work": result.content}
 
-def prepare_mail(stan: StanGrafu) -> dict:
-    subject = (
-        f"ALERT – Ryzyko odpływu klienta ID {stan['customer_id']} "
-        f"({stan['churn_probability']:.1%})"
-    )
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", PREPARE_MAIL_SYSTEM),
-        ("human",  PREPARE_MAIL_HUMAN),
-    ])
-    result = model_low.invoke(prompt.invoke({
-        "customer_id":       stan["customer_id"],
-        "churn_probability": f"{stan['churn_probability']:.1%}",
-        "data_work":         stan["data_work"],
-    }))
-    return {"mail_body": result.content, "subject": subject}
+    def prepare_mail(stan: StanGrafu) -> dict:
+        subject = (
+            f"ALERT – Ryzyko odpływu klienta ID {stan['customer_id']} "
+            f"({stan['churn_probability']:.1%})"
+        )
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", PREPARE_MAIL_SYSTEM),
+            ("human",  PREPARE_MAIL_HUMAN),
+        ])
+        result = model.invoke(prompt.invoke({
+            "customer_id":       stan["customer_id"],
+            "churn_probability": f"{stan['churn_probability']:.1%}",
+            "data_work":         stan["data_work"],
+        }))
+        return {"mail_body": result.content, "subject": subject}
+
+    return explain_shap, prepare_mail
 
 
 def send_and_log(stan: StanGrafu) -> dict:
@@ -134,34 +143,37 @@ def send_and_log(stan: StanGrafu) -> dict:
 # Budowa grafu
 # ---------------------------------------------------------------------------
 
-_build = StateGraph(StanGrafu)
-_build.add_node("explain_shap", explain_shap)
-_build.add_node("prepare_mail", prepare_mail)
-_build.add_node("send_and_log", send_and_log)
-_build.add_edge(START,          "explain_shap")
-_build.add_edge("explain_shap", "prepare_mail")
-_build.add_edge("prepare_mail", "send_and_log")
-_build.add_edge("send_and_log", END)
-graf = _build.compile()
+def _build_graph(model):
+    explain_shap, prepare_mail = _make_nodes(model)
+    build = StateGraph(StanGrafu)
+    build.add_node("explain_shap", explain_shap)
+    build.add_node("prepare_mail", prepare_mail)
+    build.add_node("send_and_log", send_and_log)
+    build.add_edge(START,          "explain_shap")
+    build.add_edge("explain_shap", "prepare_mail")
+    build.add_edge("prepare_mail", "send_and_log")
+    build.add_edge("send_and_log", END)
+    return build.compile()
 
 
 # ---------------------------------------------------------------------------
 # API publiczne
 # ---------------------------------------------------------------------------
 
-async def _run_one(state: dict, semaphore: asyncio.Semaphore) -> None:
+async def _run_one(state: dict, graf, semaphore: asyncio.Semaphore) -> None:
     async with semaphore:
         await graf.ainvoke(state)
 
 
-def run_agent(df_flagged: pd.DataFrame, to_email: str) -> list[str]:
+def run_agent(df_flagged: pd.DataFrame, to_email: str, model_backend: str = "openai") -> list[str]:
     """
     Generuje i wysyła e-maile per klient. Wywołanie synchroniczne (kompatybilne ze Streamlit).
 
     Parametry
     ----------
-    df_flagged : DataFrame z wierszami marketing_action == 1
-    to_email   : adres e-mail managera z UI
+    df_flagged     : DataFrame z wierszami marketing_action == 1
+    to_email       : adres e-mail managera z UI
+    model_backend  : "openai" (GPT-4o, async) lub "ollama" (Bielik, sekwencyjnie)
 
     Zwraca
     -------
@@ -169,10 +181,15 @@ def run_agent(df_flagged: pd.DataFrame, to_email: str) -> list[str]:
     """
     nest_asyncio.apply()
 
+    model = _get_model(model_backend)
+    graf  = _build_graph(model)
+
+    # Ollama działa sekwencyjnie – Semaphore(1) zapobiega złudnym oczekiwaniom
+    max_concurrent = 1 if model_backend == "ollama" else 10
     shap_cols = [c for c in df_flagged.columns if c.startswith("shap_")]
 
     async def _run_all() -> list[str]:
-        semaphore = asyncio.Semaphore(10)
+        semaphore = asyncio.Semaphore(max_concurrent)
         tasks = []
         for _, row in df_flagged.iterrows():
             feature_importance = {col: float(row[col]) for col in shap_cols}
@@ -185,7 +202,7 @@ def run_agent(df_flagged: pd.DataFrame, to_email: str) -> list[str]:
                 "mail_body":         "",
                 "subject":           "",
             }
-            tasks.append(_run_one(state, semaphore))
+            tasks.append(_run_one(state, graf, semaphore))
         results = await asyncio.gather(*tasks, return_exceptions=True)
         return [str(r) for r in results if isinstance(r, Exception)]
 

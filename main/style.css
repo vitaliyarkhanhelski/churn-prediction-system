@@ -88,6 +88,14 @@ hr {
     margin: 0.4rem 0 !important;
 }
 
+/* Ikonka ? (tooltip) w sidebarze – biała zamiast czarnej */
+[data-testid="stSidebar"] [data-testid="stTooltipIcon"] svg {
+    fill: #94aecb !important;
+}
+[data-testid="stSidebar"] [data-testid="stTooltipIcon"]:hover svg {
+    fill: #e2eaf4 !important;
+}
+
 /* ══════════════════════════════════════════
    FILE UPLOADER
 ══════════════════════════════════════════ */
