@@ -42,7 +42,7 @@ with open(os.path.join(os.path.dirname(__file__), "style.css")) as _f:
 # --- Toast po rerun ---
 if "pending_toast" in st.session_state:
     msg, icon = st.session_state.pop("pending_toast")
-    st.toast(msg, icon=icon)
+    st.toast(msg, icon=icon, duration=30)
 
 # --- Sidebar ---
 with st.sidebar:
@@ -314,7 +314,7 @@ if "df_final" in st.session_state:
                     f"Wiadomości dotrą wkrótce."
                 )
                 st.session_state["email_success_msg"] = msg
-                st.session_state["pending_toast"]     = (f"📧 {msg}", "📧")
+                st.session_state["pending_toast"]     = (msg, "📧")
             else:
                 msg = "Brak klientów zagrożonych odejściem – e-maile nie zostały wysłane."
                 st.session_state["email_success_msg"] = msg
@@ -335,13 +335,24 @@ if "df_final" in st.session_state:
                     use_container_width=True,
                 )
             with col_email:
+                # Sprawdzamy czy nie ma klientów do wysyłki
+                no_clients = (n_flagged == 0)
+                
+                # Dynamiczny tekst podpowiedzi (tooltip)
+                if no_clients:
+                    btn_help = "Brak klientów do wysyłki."
+                elif already_sent:
+                    btn_help = "E-maile zostały już wysłane dla tego uruchomienia."
+                else:
+                    btn_help = "Wysyła powiadomienia e-mail do opiekuna klientów zagrożonych odejściem."
+
                 st.button(
                     "✅ E-maile wysłane" if already_sent else "📧 Wyślij e-maile",
                     type="primary",
                     use_container_width=True,
-                    disabled=already_sent,
+                    disabled=already_sent or no_clients,  # <--- Kluczowa zmiana
                     on_click=_handle_email_send,
-                    help="E-maile zostały już wysłane dla tego uruchomienia." if already_sent else "Wysyła powiadomienia e-mail do opiekuna klientów zagrożonych odejściem",
+                    help=btn_help,
                 )
 
     if "email_success_msg" in st.session_state:
