@@ -14,6 +14,7 @@ EMAIL_REGEX = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
 sys.path.insert(0, os.path.dirname(__file__))
 from predict_churn import run_prediction
 from langgraph_agent import run_agent
+from utils import REQUIRED_COLUMNS
 
 
 def _handle_email_send():
@@ -138,21 +139,33 @@ RESULTS_KEYS = ["df_final", "shap_vals", "output_filename", "manager_email"]
 if uploaded_file is not None:
     df_uploaded = pd.read_csv(uploaded_file)
 
-    if st.session_state.get("last_filename") != uploaded_file.name:
-        for k in RESULTS_KEYS:
-            st.session_state.pop(k, None)
-        st.session_state["last_filename"] = uploaded_file.name
+    # Walidacja wgranych danych
+    missing_cols = [col for col in REQUIRED_COLUMNS if col not in df_uploaded.columns]
+    
+    if missing_cols:
+        st.error(f"❌ Plik jest nieprawidłowy. Brakuje następujących kolumn: **{', '.join(missing_cols)}**")
+        df_uploaded = None # Blokujemy dalsze działanie
+    else:
+        # Odcinamy nadmiarowe kolumny (np. notatki dodane przez managera)
+        df_uploaded = df_uploaded[REQUIRED_COLUMNS] 
+        
+        if st.session_state.get("last_filename") != uploaded_file.name:
+            for k in RESULTS_KEYS:
+                st.session_state.pop(k, None)
+            st.session_state["last_filename"] = uploaded_file.name
 
-    st.success(
-        f"Wgrano plik: **{uploaded_file.name}** "
-        f"({len(df_uploaded)} rekordów, {len(df_uploaded.columns)} kolumn)"
-    )
-    with st.expander("Podgląd danych", expanded=True):
-        rows = len(df_uploaded)
-        row_height = 35
-        header = 38
-        preview_height = min(rows, 10) * row_height + header
-        st.dataframe(df_uploaded, use_container_width=True, height=preview_height)
+        st.success(
+            f"Wgrano plik: **{uploaded_file.name}** "
+            f"({len(df_uploaded)} rekordów, poprawna struktura)"
+        )
+        
+        # --- Podgląd danych ---
+        with st.expander("Podgląd danych", expanded=True):
+            rows = len(df_uploaded)
+            row_height = 35
+            header = 38
+            preview_height = min(rows, 10) * row_height + header
+            st.dataframe(df_uploaded, use_container_width=True, height=preview_height)
 else:
     df_uploaded = None
     if "last_filename" in st.session_state:

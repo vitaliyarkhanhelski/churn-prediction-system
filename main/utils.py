@@ -5,6 +5,12 @@ from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
 
+REQUIRED_COLUMNS = [
+    'customer_id', 'credit_score', 'country', 'gender', 'age', 
+    'tenure', 'balance', 'products_number', 'credit_card', 
+    'active_member', 'estimated_salary'
+]
+
 
 def feature_in(df, for_model='XGB'):
     df = df.copy()
