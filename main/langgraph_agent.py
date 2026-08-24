@@ -130,8 +130,11 @@ def send_and_log(stan: StanGrafu) -> dict:
         f.write(f"Do:           {stan['to_email']}\n")
         f.write(f"Temat:        {stan['subject']}\n")
         f.write(f"Data:         {timestamp}\n")
+        f.write(f"\n--- DELIVERY STATUS ---\n")
         if errors:
-            f.write(f"BŁĘDY:        {errors}\n")
+            f.write(f"❌ Błąd wysyłki: {errors}\n")
+        else:
+            f.write(f"✅ Wysłano pomyślnie\n")
         f.write(f"\n--- SHAP (data_work) ---\n{stan['data_work']}\n")
         f.write(f"\n{'=' * 60}\n\n")
         f.write(stan["mail_body"])
@@ -167,7 +170,10 @@ async def _run_one(state: dict, graf, semaphore: asyncio.Semaphore) -> None:
 
 def run_agent(df_flagged: pd.DataFrame, to_email: str, model_backend: str = "openai") -> list[str]:
     """
-    Generuje i wysyła e-maile per klient. Wywołanie synchroniczne (kompatybilne ze Streamlit).
+    Generuje i wysyła e-maile per klient.
+
+    Bezpieczne zarówno w głównym wątku Streamlit (nest_asyncio),
+    jak i w wątku tła (asyncio.run).
 
     Parametry
     ----------
@@ -179,8 +185,6 @@ def run_agent(df_flagged: pd.DataFrame, to_email: str, model_backend: str = "ope
     -------
     list[str] – lista błędów (pusta jeśli wszystko OK)
     """
-    nest_asyncio.apply()
-
     model = _get_model(model_backend)
     graf  = _build_graph(model)
 
@@ -206,4 +210,11 @@ def run_agent(df_flagged: pd.DataFrame, to_email: str, model_backend: str = "ope
         results = await asyncio.gather(*tasks, return_exceptions=True)
         return [str(r) for r in results if isinstance(r, Exception)]
 
-    return asyncio.get_event_loop().run_until_complete(_run_all())
+    try:
+        # Główny wątek Streamlit – już ma działający event loop
+        loop = asyncio.get_running_loop()
+        nest_asyncio.apply()
+        return loop.run_until_complete(_run_all())
+    except RuntimeError:
+        # Wątek tła – brak działającego event loop, tworzymy własny
+        return asyncio.run(_run_all())

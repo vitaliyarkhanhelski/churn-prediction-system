@@ -50,3 +50,6 @@ build/
 .vscode/
 .idea/
 *.swp
+
+# Standalone training notebook folder
+bank_customer_churn/

@@ -2,6 +2,7 @@ import re
 import sys
 import os
 import time
+import threading
 import streamlit as st
 import pandas as pd
 import shap
@@ -20,6 +21,14 @@ def _handle_email_send():
     if st.session_state.get("df_final") is None:
         return
     st.session_state["sending_emails"] = True
+
+
+def _run_agent_background(df_flagged_copy: pd.DataFrame, manager_email: str, model_backend: str) -> None:
+    """Uruchamia agenta w osobnym wątku – nie blokuje UI. Błędy trafiają do logów w emails/."""
+    try:
+        run_agent(df_flagged_copy, to_email=manager_email, model_backend=model_backend)
+    except Exception:
+        pass
 
 st.set_page_config(
     page_title="Churn Prediction System",
@@ -292,23 +301,25 @@ if "df_final" in st.session_state:
         with actions_slot.container():
             n_at_risk     = int(df_final["marketing_action"].sum())
             manager_email = st.session_state.get("manager_email", "")
-            with st.spinner(f"Generowanie i wysyłanie {n_at_risk} e-mail{'i' if n_at_risk != 1 else 'a'} przez AI..."):
-                if n_at_risk > 0:
-                    errors = run_agent(df_flagged, to_email=manager_email, model_backend=model_backend)
-                    if errors:
-                        st.session_state["email_success_msg"] = f"⚠️ Wysłano z błędami: {'; '.join(errors)}"
-                        st.session_state["pending_toast"] = (f"⚠️ Wysłano z błędami: {errors[0]}", "⚠️")
-                    else:
-                        msg = (
-                            f"E-maile wysłane – {n_at_risk} klient{'ów' if n_at_risk != 1 else ''} "
-                            f"zagrożon{'ych' if n_at_risk != 1 else 'y'} odejściem. Logi w folderze emails/."
-                        )
-                        st.session_state["email_success_msg"] = msg
-                        st.session_state["pending_toast"] = (f"✅ {msg}", "📧")
-                else:
-                    msg = "Brak klientów zagrożonych odejściem – e-maile nie zostały wysłane."
-                    st.session_state["email_success_msg"] = msg
-                    st.session_state["pending_toast"] = (msg, "ℹ️")
+
+            if n_at_risk > 0:
+                threading.Thread(
+                    target=_run_agent_background,
+                    args=(df_flagged.copy(), manager_email, model_backend),
+                    daemon=True,
+                ).start()
+                msg = (
+                    f"Wysyłanie e-maili do {n_at_risk} klient{'ów' if n_at_risk != 1 else 'a'} "
+                    f"zagrożon{'ych' if n_at_risk != 1 else 'ego'} odejściem zlecone. "
+                    f"Wiadomości dotrą wkrótce."
+                )
+                st.session_state["email_success_msg"] = msg
+                st.session_state["pending_toast"]     = (f"📧 {msg}", "📧")
+            else:
+                msg = "Brak klientów zagrożonych odejściem – e-maile nie zostały wysłane."
+                st.session_state["email_success_msg"] = msg
+                st.session_state["pending_toast"]     = (msg, "ℹ️")
+
             st.session_state["sending_emails"] = False
             st.session_state[emails_sent_key]  = True
             st.rerun()
@@ -335,10 +346,10 @@ if "df_final" in st.session_state:
 
     if "email_success_msg" in st.session_state:
         msg = st.session_state["email_success_msg"]
-        if "Brak klientów" in msg or "błędy" in msg.lower():
+        if "Brak klientów" in msg:
             st.warning(msg)
         else:
-            st.success(msg)
+            st.info(msg)
 
     # =============================================
     # --- SHAP Waterfall – analiza klienta ---
