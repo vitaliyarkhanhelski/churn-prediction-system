@@ -21,8 +21,9 @@ Opiekun pracy: dr Grażyna Musiatowicz-Podbiał
 3. Analiza SHAP wyjaśnia DLACZEGO klient może odejść (które cechy mają największy wpływ)
 4. Opiekun klika "Wyślij e-maile" – system natychmiast potwierdza zlecenie (toast)
    i uruchamia wysyłkę asynchronicznie w tle (nie blokuje UI)
-5. Agent AI (LangGraph) generuje spersonalizowaną treść e-maila per klient
-   i wysyła powiadomienie przez Gmail SMTP
+5. Agent AI (LangGraph) generuje spersonalizowaną treść e-maila per klient, dobiera
+   pasującą kampanię marketingową z bazy wektorowej (RAG) i wysyła e-mail z załączonym
+   PDF-em kampanii przez Gmail SMTP
 6. Każda wysyłka jest logowana w emails/ ze statusem ✅/❌ i treścią wiadomości
 ```
 
@@ -36,7 +37,8 @@ Opiekun pracy: dr Grażyna Musiatowicz-Podbiał
 | Model ML | VotingClassifier (XGBoost, SVM, Logistic Regression) |
 | Explainable AI | SHAP (SHapley Additive exPlanations) |
 | Agent AI / generowanie e-maili | LangGraph + LangChain |
-| Model językowy | OpenAI GPT-4o (async, ~10s/4 e-maile) / Bielik via Ollama (lokalnie, bezpłatny) |
+| Dopasowanie kampanii marketingowej (RAG) | Chroma (baza wektorowa) + OpenAI Embeddings |
+| Model językowy | OpenAI GPT-4o (async, 2 e-maile naraz, szybszy niż Bielik) / Bielik via Ollama (lokalnie, bezpłatny, sekwencyjnie) |
 | Wysyłka e-maili | Gmail SMTP (Python `smtplib`) |
 | Optymalizacja hiperparametrów | Optuna |
 
@@ -62,6 +64,11 @@ main/
 │   └── churn_YYYY-MM-DD_HH-MM-SS.csv             # Wyniki analiz (per uruchomienie)
 ├── emails/
 │   └── YYYY-MM-DD_HH-MM-SS_<customer_id>.txt     # Logi wysłanych e-maili (treść + status)
+├── rag/
+│   ├── Marketing_cam/               # Opisy kampanii marketingowych (.docx) – źródło RAG
+│   └── Files_to_attach/             # Broszury kampanii (.pdf) – załączane do e-maili
+├── Marketing_cam_test/              # Baza wektorowa Chroma (zbudowana z rag/Marketing_cam)
+├── 01_build_vector_db.ipynb         # Notebook budujący bazę wektorową kampanii
 └── .streamlit/
     └── config.toml                 # Konfiguracja motywu Streamlit
 
@@ -77,11 +84,12 @@ bank_customer_churn/                # Samodzielny notebook do trenowania modelu
 
 ## Uruchomienie lokalne
 
-### Wymagania
+### Wymagania i instalacja zależności
+
+Aby zainstalować wszystkie biblioteki wymagane do uruchomienia projektu, otwórz terminal w głównym folderze i wpisz:
 
 ```bash
-pip install streamlit shap xgboost scikit-learn pandas numpy joblib python-dotenv
-```
+pip install -r requirements.txt
 
 ### Konfiguracja e-mail i OpenAI
 
@@ -130,10 +138,10 @@ System oferuje dwa tryby analizy:
 
 Po kliknięciu "Wyślij e-maile" system natychmiast odblokowuje UI (toast z potwierdzeniem) i uruchamia wysyłkę w osobnym wątku (`threading.Thread`):
 
-- **OpenAI GPT-4o** – do 10 e-maili generowanych równolegle (`asyncio.Semaphore(10)`)
-- **Bielik (Ollama)** – jeden po drugim (`Semaphore(1)`), ok. ~20s/e-mail, ale UI nie czeka
+- **OpenAI GPT-4o** – 2 e-maile generowane równolegle (`asyncio.Semaphore(2)`, ograniczone celowo, żeby nie przekraczać limitu tokenów/min OpenAI). Każdy e-mail to kilka wywołań LLM (analiza SHAP, wyszukanie i streszczenie kampanii marketingowej, treść e-maila), więc realnie liczy się to w minutach, nie sekundach.
+- **Bielik (Ollama)** – jeden po drugim (`Semaphore(1)`), wolniej niż OpenAI, ale UI nie czeka
 
-Każda wysyłka zapisuje log do `emails/<timestamp>_<customer_id>.txt` z treścią e-maila i statusem `✅ Wysłano pomyślnie` lub `❌ Błąd wysyłki`.
+Każda wysyłka zapisuje log do `emails/<timestamp>_<customer_id>.txt` z treścią e-maila i statusem `✅ Wysłano pomyślnie` lub `❌ Błąd wysyłki`. Wywołania LLM automatycznie ponawiają się przy chwilowym przekroczeniu limitu OpenAI (rate limit), a streszczenia kampanii marketingowych są cache'owane, żeby nie liczyć ich od nowa dla każdego klienta. Jeśli cały proces dla klienta się nie powiedzie, log trafia do `emails/<timestamp>_<customer_id>_FAILED.txt` zamiast znikać bez śladu.
 
 ---
 
@@ -157,5 +165,7 @@ Każda wysyłka zapisuje log do `emails/<timestamp>_<customer_id>.txt` z treści
 - [x] Wybór modelu LLM (OpenAI GPT-4o / Bielik) z poziomu UI
 - [x] Asynchroniczna wysyłka e-maili (nie blokuje UI)
 - [x] Logowanie e-maili ze statusem dostarczenia
+- [x] Dopasowanie kampanii marketingowej (RAG + Chroma) z załącznikiem PDF
+- [x] Podgląd statusu wysyłki e-maili na żywo w UI
 - [x] Notebook trenowania modelu z pobieraniem danych z Kaggle
 - [ ] Prezentacja końcowa

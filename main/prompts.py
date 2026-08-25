@@ -40,7 +40,7 @@ EXPLAIN_SHAP_HUMAN = """Czynniki ryzyka:
 
 Zwróć ponumerowaną listę zgodnie z przykładem. Zachowaj emoji."""
 
-PREPARE_MAIL_SYSTEM = """Składasz e-mail alertowy do opiekuna klienta na podstawie gotowej analizy.
+PREPARE_MAIL_SYSTEM = """Składasz e-mail alertowy do opiekuna klienta na podstawie gotowej analizy oraz dopasowanej kampanii marketingowej.
 
 PRZYKŁAD GOTOWEGO E-MAILA (skopiuj ten format dokładnie, wstaw tylko właściwe wartości):
 
@@ -53,6 +53,9 @@ Przyczyny tego ryzyka:
 2. 🟡 Saldo konta utrzymuje się na umiarkowanym poziomie, co może sygnalizować wycofywanie środków.
 3. 🟢 Wiek klienta jest czynnikiem stabilizującym – zmniejsza prawdopodobieństwo odejścia.
 
+Rekomendowana kampania retencyjna:
+Kampania "Dekada Zaufania" nagradza długoletnich klientów preferencyjnymi warunkami depozytów i dobrze pasuje do profilu tego klienta – warto zaprezentować ją podczas kontaktu.
+
 Proszę o podjęcie działań retencyjnych w ciągu 48 godzin.
 
 Z poważaniem,
@@ -63,6 +66,8 @@ ZASADY (bezwzględnie obowiązujące):
 - Nagłówek listy ZAWSZE: "Przyczyny tego ryzyka:"
 - Skopiuj wszystkie punkty z analizy słowo w słowo – zachowaj emoji 🔴 🟡 🟢.
 - Używaj numeracji 1. 2. 3. – nigdy myślników.
+- Nagłówek sekcji kampanii ZAWSZE: "Rekomendowana kampania retencyjna:"
+- W sekcji kampanii streść PODANĄ analizę kampanii w 2-3 zdaniach, po polsku, językiem biznesowym – podaj nazwę kampanii i dlaczego pasuje do tego klienta. Jeśli podana analiza mówi, że brak dopasowanej kampanii w bazie, zamiast tego napisz jedno zdanie rekomendujące standardowe kroki retencyjne.
 - Ostatnie zdanie ZAWSZE: "Proszę o podjęcie działań retencyjnych w ciągu 48 godzin."
 - Podpis ZAWSZE: "System Predykcji Odpływu Klientów"
 - NIE dodawaj żadnego tekstu spoza szablonu."""
@@ -71,4 +76,7 @@ PREPARE_MAIL_HUMAN = """ID klienta: {customer_id}
 Ryzyko odpływu: {churn_probability}
 
 Analiza przyczyn (skopiuj te punkty słowo w słowo):
-{data_work}"""
+{data_work}
+
+Dopasowana kampania marketingowa (streść w sekcji "Rekomendowana kampania retencyjna"):
+{from_summarizer}"""

@@ -1,0 +1,26 @@
+# Interfejs i dane
+streamlit
+pandas
+numpy
+
+# Machine Learning & SHAP
+scikit-learn
+xgboost
+shap
+joblib
+
+# Agent AI i integracje
+langchain
+langchain-core
+langchain-openai
+langchain-ollama
+langchain-community
+langgraph
+
+# RAG (Baza wektorowa i dokumenty)
+langchain-chroma
+docx2txt
+
+# Inne
+python-dotenv
+nest-asyncio

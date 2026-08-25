@@ -3,6 +3,7 @@ import sys
 import os
 import time
 import threading
+import traceback
 import streamlit as st
 import pandas as pd
 import shap
@@ -13,7 +14,7 @@ EMAIL_REGEX = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
 
 sys.path.insert(0, os.path.dirname(__file__))
 from predict_churn import run_prediction
-from langgraph_agent import run_agent
+from langgraph_agent import run_agent, get_progress
 from utils import REQUIRED_COLUMNS
 
 
@@ -24,12 +25,15 @@ def _handle_email_send():
     st.session_state["sending_emails"] = True
 
 
-def _run_agent_background(df_flagged_copy: pd.DataFrame, manager_email: str, model_backend: str) -> None:
+def _run_agent_background(df_flagged_copy: pd.DataFrame, manager_email: str, model_backend: str, run_id: str) -> None:
     """Uruchamia agenta w osobnym wątku – nie blokuje UI. Błędy trafiają do logów w emails/."""
     try:
-        run_agent(df_flagged_copy, to_email=manager_email, model_backend=model_backend)
+        run_agent(df_flagged_copy, to_email=manager_email, model_backend=model_backend, run_id=run_id)
     except Exception:
-        pass
+        # Błędy per-klient trafiają do logów w emails/*_FAILED.txt (patrz _run_one).
+        # To tylko siatka bezpieczeństwa na wypadek błędu poza tą pętlą – i tak nie ma
+        # tu jak zgłosić błędu do UI (wątek w tle), ale przynajmniej trafia do konsoli.
+        traceback.print_exc()
 
 st.set_page_config(
     page_title="Churn Prediction System",
@@ -71,10 +75,13 @@ with st.sidebar:
         options=["☁️ OpenAI GPT-4o", "🦙 Bielik (lokalnie)"],
         index=0,
         help=(
-            "**OpenAI GPT-4o** – szybki (~10s dla 4 e-maili), wymaga klucza API. "
-            "Wysyła dane do chmury OpenAI.\n\n"
-            "**Bielik (lokalnie)** – darmowy, dane zostają na Twoim komputerze. "
-            "Wymaga uruchomionego Ollama (`ollama serve`). ~20s/e-mail sekwencyjnie."
+            "**OpenAI GPT-4o** – przetwarza 2 e-maile jednocześnie i jest szybszy niż Bielik, "
+            "ale każdy e-mail wymaga kilku wywołań LLM (analiza SHAP, wyszukanie i streszczenie "
+            "kampanii marketingowej, treść e-maila), zajmuje minuty. "
+            "Wymaga klucza API, wysyła dane do chmury OpenAI.\n\n"
+            "**Bielik (lokalnie)** – darmowy, dane zostają na Twoim komputerze, ale wolniejszy – "
+            "e-maile generowane sekwencyjnie, jeden po drugim. "
+            "Wymaga uruchomionego Ollama (`ollama serve`)."
         ),
     )
     model_backend = "ollama" if "Bielik" in model_choice else "openai"
@@ -87,7 +94,7 @@ with st.sidebar:
         except Exception:
             st.warning("Ollama nie działa. Uruchom: `ollama serve`")
     else:
-        st.caption("⚡ Kilka e-maili jednocześnie · wymaga klucza OpenAI")
+        st.caption("⚡ 2 e-maile jednocześnie · szybszy niż Bielik · wymaga klucza OpenAI")
 
     st.markdown("---")
     st.caption("v0.2 – POC")
@@ -165,7 +172,7 @@ if uploaded_file is not None:
             row_height = 35
             header = 38
             preview_height = min(rows, 10) * row_height + header
-            st.dataframe(df_uploaded, use_container_width=True, height=preview_height)
+            st.dataframe(df_uploaded, width='stretch', height=preview_height)
 else:
     df_uploaded = None
     if "last_filename" in st.session_state:
@@ -201,7 +208,7 @@ with run_col:
     run_button = st.button(
         "▶ Uruchom analizę",
         type="primary",
-        use_container_width=True,
+        width='stretch',
         disabled=not ready,
     )
 
@@ -287,7 +294,7 @@ if "df_final" in st.session_state:
             df_flagged["top_3_powody_SHAP"] = df_flagged.apply(top3_reasons, axis=1)
             st.dataframe(
                 df_flagged[["customer_id", "account_manager_email", "churn_probability", "top_3_powody_SHAP"]].reset_index(drop=True),
-                use_container_width=True,
+                width='stretch',
                 hide_index=True,
                 height=min(400, (len(df_flagged) + 1) * 35 + 10),
             )
@@ -300,7 +307,7 @@ if "df_final" in st.session_state:
             return [""] * len(row)
 
         styled = df_final.reset_index(drop=True).style.apply(highlight_at_risk, axis=1)
-        st.dataframe(styled, use_container_width=True, hide_index=True)
+        st.dataframe(styled, width='stretch', hide_index=True)
 
     # --- Pobierz / Wyślij e-maile ---
     emails_sent_key = f"emails_sent_{output_filename}"
@@ -318,9 +325,11 @@ if "df_final" in st.session_state:
             if n_at_risk > 0:
                 threading.Thread(
                     target=_run_agent_background,
-                    args=(df_flagged.copy(), manager_email, model_backend),
+                    args=(df_flagged.copy(), manager_email, model_backend, output_filename),
                     daemon=True,
                 ).start()
+                st.session_state["progress_run_id"]    = output_filename
+                st.session_state["progress_run_total"] = n_at_risk
                 msg = (
                     f"Wysyłanie e-maili do {n_at_risk} klient{'ów' if n_at_risk != 1 else 'a'} "
                     f"zagrożon{'ych' if n_at_risk != 1 else 'ego'} odejściem zlecone. "
@@ -345,7 +354,7 @@ if "df_final" in st.session_state:
                     data=df_final.to_csv(index=False),
                     file_name=output_filename,
                     mime="text/csv",
-                    use_container_width=True,
+                    width='stretch',
                 )
             with col_email:
                 # Sprawdzamy czy nie ma klientów do wysyłki
@@ -362,7 +371,7 @@ if "df_final" in st.session_state:
                 st.button(
                     "✅ E-maile wysłane" if already_sent else "📧 Wyślij e-maile",
                     type="primary",
-                    use_container_width=True,
+                    width='stretch',
                     disabled=already_sent or no_clients,  # <--- Kluczowa zmiana
                     on_click=_handle_email_send,
                     help=btn_help,
@@ -385,8 +394,27 @@ if "df_final" in st.session_state:
         "(czerwone) lub **zmniejszają** (niebieskie) ryzyko odejścia."
     )
 
+    # 1. Tworzymy zbiór ID klientów zagrożonych odejściem
+    flagged_ids = set(df_final[df_final["marketing_action"] == 1]["customer_id"])
+
+    # 2. Definiujemy funkcję formatującą wygląd opcji na liście
+    def format_customer_id(cid):
+        if cid in flagged_ids:
+            return f"🔴 {cid} (Zagrożony)"
+        return f"🟢 {cid}"
+
+    # 3. Wyciągamy wszystkie ID
     all_ids = df_final["customer_id"].tolist()
-    selected_id = st.selectbox("Wybierz klienta (customer_id)", options=all_ids)
+
+    # 4. Sortujemy listę tak, aby zagrożeni klienci byli zawsze na górze!
+    sorted_ids = sorted(all_ids, key=lambda x: x not in flagged_ids)
+
+    # 5. Tworzymy selectbox z naszym formatowaniem
+    selected_id = st.selectbox(
+        "Wybierz klienta (customer_id)",
+        options=sorted_ids,
+        format_func=format_customer_id
+    )
 
     if selected_id is not None:
         row_pos = df_final[df_final["customer_id"] == selected_id].index[0]
@@ -407,4 +435,29 @@ if "df_final" in st.session_state:
             fig, ax = plt.subplots(figsize=(6, 4))
             shap.plots.waterfall(shap_vals[row_pos], show=False)
             st.pyplot(plt.gcf(), clear_figure=True)
+
+    # =============================================
+    # --- Status wysyłki e-maili (na żywo) ---
+    # =============================================
+    if st.session_state.get("progress_run_id"):
+        st.markdown("---")
+        st.subheader("6. Status wysyłki e-maili")
+
+        @st.fragment(run_every="10s")
+        def _render_email_progress():
+            run_id = st.session_state.get("progress_run_id")
+            total  = st.session_state.get("progress_run_total", 0)
+            rows   = get_progress(run_id)
+
+            if not rows:
+                st.info("Oczekiwanie na pierwsze wyniki...")
+            else:
+                st.dataframe(
+                    pd.DataFrame(rows, columns=["customer_id", "log_file", "status"]),
+                    width='stretch',
+                    hide_index=True,
+                )
+            st.caption(f"{len(rows)} / {total} przetworzonych")
+
+        _render_email_progress()
 

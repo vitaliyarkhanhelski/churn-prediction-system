@@ -53,3 +53,6 @@ build/
 
 # Standalone training notebook folder
 bank_customer_churn/
+
+# Bazy wektorowe RAG
+Marketing_cam_test/
