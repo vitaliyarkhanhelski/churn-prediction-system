@@ -6,7 +6,7 @@ Praca dyplomowa – Vitaliy Arkhanhelski & Szymon Wiśniewski
 
 ## O projekcie
 
-Inteligentny system wspierający dział handlowy w proaktywnym zapobieganiu odejściu klientów. System łączy Machine Learning, Explainable AI oraz automatyzację wysyłki powiadomień e-mail.
+Inteligentny system wspierający dział handlowy w proaktywnym zapobieganiu odejściu klientów. System łączy Machine Learning, Explainable AI, dopasowanie kampanii marketingowych (RAG) oraz automatyzację wysyłki powiadomień e-mail.
 
 Opiekun pracy: dr Grażyna Musiatowicz-Podbiał
 
@@ -21,9 +21,9 @@ Opiekun pracy: dr Grażyna Musiatowicz-Podbiał
 3. Analiza SHAP wyjaśnia DLACZEGO klient może odejść (które cechy mają największy wpływ)
 4. Opiekun klika "Wyślij e-maile" – system natychmiast potwierdza zlecenie (toast)
    i uruchamia wysyłkę asynchronicznie w tle (nie blokuje UI)
-5. Agent AI (LangGraph) generuje spersonalizowaną treść e-maila per klient, dobiera
-   pasującą kampanię marketingową z bazy wektorowej (RAG) i wysyła e-mail z załączonym
-   PDF-em kampanii przez Gmail SMTP
+5. Agent AI (LangGraph) generuje spersonalizowaną treść e-maila per klient, wyszukuje
+   kandydatów w bazie wektorowej (RAG), wybiera JEDNĄ najlepiej dopasowaną kampanię
+   i wysyła e-mail z załączonym PDF-em tej kampanii przez Gmail SMTP
 6. Każda wysyłka jest logowana w emails/ ze statusem ✅/❌ i treścią wiadomości
 ```
 
@@ -140,6 +140,8 @@ Po kliknięciu "Wyślij e-maile" system natychmiast odblokowuje UI (toast z potw
 
 - **OpenAI GPT-4o** – 2 e-maile generowane równolegle (`asyncio.Semaphore(2)`, ograniczone celowo, żeby nie przekraczać limitu tokenów/min OpenAI). Każdy e-mail to kilka wywołań LLM (analiza SHAP, wyszukanie i streszczenie kampanii marketingowej, treść e-maila), więc realnie liczy się to w minutach, nie sekundach.
 - **Bielik (Ollama)** – jeden po drugim (`Semaphore(1)`), wolniej niż OpenAI, ale UI nie czeka
+
+Wyszukanie i wybór kampanii (RAG) zawsze korzysta z OpenAI, niezależnie od modelu wybranego w UI – lokalny Bielik zawodził przy porównywaniu kampanii (np. wybierał kampanię dla Hiszpanii dla klienta z Francji). Do OpenAI trafia wtedy tylko zanonimizowany profil ryzyka, bez ID klienta. Uzasadnienie wyboru kampanii zapisywane jest w logu e-maila.
 
 Każda wysyłka zapisuje log do `emails/<timestamp>_<customer_id>.txt` z treścią e-maila i statusem `✅ Wysłano pomyślnie` lub `❌ Błąd wysyłki`. Wywołania LLM automatycznie ponawiają się przy chwilowym przekroczeniu limitu OpenAI (rate limit), a streszczenia kampanii marketingowych są cache'owane, żeby nie liczyć ich od nowa dla każdego klienta. Jeśli cały proces dla klienta się nie powiedzie, log trafia do `emails/<timestamp>_<customer_id>_FAILED.txt` zamiast znikać bez śladu.
 
