@@ -79,9 +79,9 @@ with st.sidebar:
             "ale każdy e-mail wymaga kilku wywołań LLM (analiza SHAP, wyszukanie i streszczenie "
             "kampanii marketingowej, treść e-maila), zajmuje minuty. "
             "Wymaga klucza API, wysyła dane do chmury OpenAI.\n\n"
-            "**Bielik (lokalnie)** – darmowy, dane zostają na Twoim komputerze, ale wolniejszy – "
-            "e-maile generowane sekwencyjnie, jeden po drugim. "
-            "Wymaga uruchomionego Ollama (`ollama serve`)."
+            "**Bielik (lokalnie)** – darmowy, większość przetwarzania lokalnie, ale wolniejszy – "
+            "e-maile generowane sekwencyjnie, jeden po drugim. Dopasowanie kampanii (RAG) zawsze "
+            "korzysta z OpenAI (dane zanonimizowane). Wymaga uruchomionego Ollama (`ollama serve`)."
         ),
     )
     model_backend = "ollama" if "Bielik" in model_choice else "openai"
@@ -90,14 +90,14 @@ with st.sidebar:
         import urllib.request
         try:
             urllib.request.urlopen("http://localhost:11434", timeout=1)
-            st.caption("🆓 Bezpłatny · dane zostają lokalnie · wolniejszy (e-maile generowane jeden po drugim)")
+            st.caption("🆓 Bezpłatny · większość przetwarzania lokalnie (RAG nadal przez OpenAI) · wolniejszy (e-maile generowane jeden po drugim)")
         except Exception:
             st.warning("Ollama nie działa. Uruchom: `ollama serve`")
     else:
         st.caption("⚡ 2 e-maile jednocześnie · szybszy niż Bielik · wymaga klucza OpenAI")
 
     st.markdown("---")
-    st.caption("v0.2 – POC")
+    st.caption("v0.3 – POC")
 
 # --- Header ---
 st.title("🎯 System Predykcji Odpływu Klientów")
