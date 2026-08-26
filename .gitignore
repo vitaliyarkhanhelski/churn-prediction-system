@@ -56,3 +56,10 @@ bank_customer_churn/
 
 # Bazy wektorowe RAG
 Marketing_cam_test/
+
+# Logi wysłanych e-maili (zawierają adresy odbiorców i profile klientów)
+main/emails/*
+!main/emails/.gitkeep
+
+# Prezentacja (duże pliki binarne: .mov, .pptx, .pdf)
+prezentacja/
