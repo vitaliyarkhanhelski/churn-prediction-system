@@ -38,9 +38,12 @@ env/
 dist/
 build/
 
-# Jupyter
+# Jupyter – notatniki robocze ignorujemy, ale dwa są wymagane do uruchomienia
+# projektu od zera (trenowanie modeli + budowa bazy wektorowej), więc trafiają do repo.
 .ipynb_checkpoints/
 *.ipynb
+!main/Final_Vote_model_LC.ipynb
+!main/01_build_vector_db.ipynb
 
 # macOS
 .DS_Store

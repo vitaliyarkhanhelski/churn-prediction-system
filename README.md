@@ -55,7 +55,9 @@ main/
 ├── email_service.py                # Wysyłka e-maili przez Gmail SMTP
 ├── utils.py                        # Feature engineering (transformacje cech)
 ├── style.css                       # Style CSS interfejsu
-├── models/
+├── Final_Vote_model_LC.ipynb        # Notebook trenujący modele → main/models/ (krok 1)
+├── 01_build_vector_db.ipynb         # Notebook budujący bazę wektorową kampanii (krok 2)
+├── models/                          # (poza repo – generowane przez Final_Vote_model_LC.ipynb)
 │   ├── voting_model.pkl            # Wytrenowany model (VotingClassifier)
 │   └── xgboost_for_shap.pkl        # Model XGBoost do analizy SHAP
 ├── data/
@@ -67,15 +69,12 @@ main/
 ├── rag/
 │   ├── Marketing_cam/               # Opisy kampanii marketingowych (.docx) – źródło RAG
 │   └── Files_to_attach/             # Broszury kampanii (.pdf) – załączane do e-maili
-├── Marketing_cam_test/              # Baza wektorowa Chroma (zbudowana z rag/Marketing_cam)
-├── 01_build_vector_db.ipynb         # Notebook budujący bazę wektorową kampanii
+├── Marketing_cam_test/              # (poza repo – generowana przez 01_build_vector_db.ipynb)
 └── .streamlit/
     └── config.toml                 # Konfiguracja motywu Streamlit
 
-bank_customer_churn/                # Samodzielny notebook do trenowania modelu
-├── bank_customer_churn_model_training.ipynb
-├── utils.py
-├── data/                           # Dataset z Kaggle (pobierany automatycznie)
+bank_customer_churn/                # Materiały robocze do trenowania modelu (poza repo)
+├── data/                           # Dataset z Kaggle
 ├── models/                         # Zapisane modele .pkl
 └── output/                         # Wykresy SHAP + CSV z wartościami
 ```
@@ -111,6 +110,22 @@ ollama serve
 ```
 
 Wymagania: ~6.5 GB miejsca na dysku. Wysyłka w tle – UI nie czeka na zakończenie.
+
+### Pierwsze uruchomienie (wymagane po sklonowaniu repo)
+
+Wytrenowane modele (`main/models/*.pkl`) i baza wektorowa (`main/Marketing_cam_test/`) **nie są trzymane w repozytorium** – trzeba je wygenerować lokalnie, uruchamiając dwa notatniki w tej kolejności:
+
+```bash
+cd main
+jupyter notebook
+```
+
+1. **`Final_Vote_model_LC.ipynb`** – trenuje modele i zapisuje je do `main/models/`
+   (`voting_model.pkl` + `xgboost_for_shap.pkl`). Bez nich `predict_churn.py` nie wystartuje.
+2. **`01_build_vector_db.ipynb`** – buduje bazę wektorową Chroma w `main/Marketing_cam_test/`
+   na podstawie plików z `main/rag/Marketing_cam/`. Bez niej nie zadziała dopasowanie kampanii (RAG).
+
+> Krok 2 wymaga skonfigurowanego `OPENAI_API_KEY` (embeddingi liczone są przez OpenAI).
 
 ### Start
 

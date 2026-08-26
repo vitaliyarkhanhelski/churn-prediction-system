@@ -143,10 +143,16 @@ dir onto `sys.path`), so scripts must be run with `main/` as the working directo
     inside an `@st.fragment(run_every="10s")`, so only that table refreshes. The `run_id` is the
     results CSV filename (already unique per analysis run).
 
-- **`bank_customer_churn/`** — a separate, standalone offline notebook environment for training
-  the VotingClassifier and the SHAP XGBoost model from the Kaggle dataset (ROC-AUC 0.86). It is
-  git-ignored and independent of `main/`; trained `.pkl` artifacts must be copied manually into
-  `main/models/` to be picked up by `predict_churn.py`.
+- **Setup after a fresh clone** — neither the models nor the vector store are versioned, and the
+  app cannot start without them. Two notebooks in `main/` regenerate them, in order:
+  `Final_Vote_model_LC.ipynb` trains and `joblib.dump`s both `models/*.pkl` (ROC-AUC 0.86), then
+  `01_build_vector_db.ipynb` builds `Marketing_cam_test/` from `rag/Marketing_cam/*.docx`
+  (needs `OPENAI_API_KEY` — embeddings are computed via OpenAI). `.gitignore` blanket-ignores
+  `*.ipynb` with explicit negations for these two; other notebooks in `main/` are scratch work.
+
+- **`bank_customer_churn/`** — git-ignored working material (Kaggle dataset, saved `.pkl`s, SHAP
+  plots) from model development. Not required to run the app; the training notebook that actually
+  produces `main/models/` is `main/Final_Vote_model_LC.ipynb`.
 
 - **`rag/`** — source material for the marketing-campaign RAG: `Marketing_cam/*.docx` is what
   gets embedded/searched; `Files_to_attach/*.pdf` are the matching attachments sent to customers.
