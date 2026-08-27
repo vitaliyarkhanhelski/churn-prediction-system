@@ -29,20 +29,26 @@ Opiekun pracy: dr Grażyna Musiatowicz-Podbiał
 
 ---
 
+
+
 ## Stos technologiczny
 
-| Warstwa | Technologia |
-|---------|-------------|
-| Interfejs użytkownika | Streamlit (Python) |
-| Model ML | VotingClassifier (XGBoost, SVM, Logistic Regression) |
-| Explainable AI | SHAP (SHapley Additive exPlanations) |
-| Agent AI / generowanie e-maili | LangGraph + LangChain |
-| Dopasowanie kampanii marketingowej (RAG) | Chroma (baza wektorowa) + OpenAI Embeddings |
-| Model językowy | OpenAI GPT-4o (async, 2 e-maile naraz, szybszy niż Bielik) / Bielik via Ollama (lokalnie, bezpłatny, sekwencyjnie) |
-| Wysyłka e-maili | Gmail SMTP (Python `smtplib`) |
-| Optymalizacja hiperparametrów | Optuna |
+
+| Warstwa                                  | Technologia                                                                                                        |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Interfejs użytkownika                    | Streamlit (Python)                                                                                                 |
+| Model ML                                 | VotingClassifier (XGBoost, SVM, Logistic Regression)                                                               |
+| Explainable AI                           | SHAP (SHapley Additive exPlanations)                                                                               |
+| Agent AI / generowanie e-maili           | LangGraph + LangChain                                                                                              |
+| Dopasowanie kampanii marketingowej (RAG) | Chroma (baza wektorowa) + OpenAI Embeddings                                                                        |
+| Model językowy                           | OpenAI GPT-4o (async, 2 e-maile naraz, szybszy niż Bielik) / Bielik via Ollama (lokalnie, bezpłatny, sekwencyjnie) |
+| Wysyłka e-maili                          | Gmail SMTP (Python `smtplib`)                                                                                      |
+| Optymalizacja hiperparametrów            | Optuna                                                                                                             |
+
 
 ---
+
+
 
 ## Struktura projektu
 
@@ -81,7 +87,11 @@ bank_customer_churn/                # Materiały robocze do trenowania modelu (p
 
 ---
 
+
+
 ## Uruchomienie lokalne
+
+
 
 ### Wymagania i instalacja zależności
 
@@ -92,14 +102,20 @@ pip install -r requirements.txt
 
 ### Konfiguracja e-mail i OpenAI
 
-Utwórz plik `main/.env`:
+
 ```
+
+Utwórz plik `main/.env`:
+
+```bash
 SENDER_EMAIL=twoje.konto@gmail.com
 SENDER_APP_PASSWORD=xxxx xxxx xxxx xxxx
 OPENAI_API_KEY=sk-...
 ```
 
 > App Password generujesz w Google: Konto → Bezpieczeństwo → Weryfikacja dwuetapowa → Hasła do aplikacji
+
+
 
 ### Bielik (opcjonalnie – lokalny LLM)
 
@@ -120,12 +136,14 @@ cd main
 jupyter notebook
 ```
 
-1. **`Final_Vote_model_LC.ipynb`** – trenuje modele i zapisuje je do `main/models/`
-   (`voting_model.pkl` + `xgboost_for_shap.pkl`). Bez nich `predict_churn.py` nie wystartuje.
-2. **`01_build_vector_db.ipynb`** – buduje bazę wektorową Chroma w `main/Marketing_cam_test/`
-   na podstawie plików z `main/rag/Marketing_cam/`. Bez niej nie zadziała dopasowanie kampanii (RAG).
+1. `Final_Vote_model_LC.ipynb` – trenuje modele i zapisuje je do `main/models/`
+  (`voting_model.pkl` + `xgboost_for_shap.pkl`). Bez nich `predict_churn.py` nie wystartuje.
+2. `01_build_vector_db.ipynb` – buduje bazę wektorową Chroma w `main/Marketing_cam_test/`
+  na podstawie plików z `main/rag/Marketing_cam/`. Bez niej nie zadziała dopasowanie kampanii (RAG).
 
 > Krok 2 wymaga skonfigurowanego `OPENAI_API_KEY` (embeddingi liczone są przez OpenAI).
+
+
 
 ### Start
 
@@ -138,16 +156,22 @@ Aplikacja dostępna na `http://localhost:8501`
 
 ---
 
+
+
 ## Strategie marketingowe
 
 System oferuje dwa tryby analizy:
 
-| Strategia | Próg | Charakterystyka |
-|-----------|------|-----------------|
-| 🎯 **Precyzyjny** | 0.79 | Precision > 89% – mniej kontaktów, prawie każdy to faktyczny uciekinier |
-| 🔍 **Szeroki zasięg** | 0.53 | Max F1 = 0.639 – więcej uratowanych klientów, więcej kontaktów |
+
+| Strategia             | Próg | Charakterystyka                                                         |
+| --------------------- | ---- | ----------------------------------------------------------------------- |
+| 🎯 **Precyzyjny**     | 0.79 | Precision > 89% – mniej kontaktów, prawie każdy to faktyczny uciekinier |
+| 🔍 **Szeroki zasięg** | 0.53 | Max F1 = 0.639 – więcej uratowanych klientów, więcej kontaktów          |
+
 
 ---
+
+
 
 ## Wysyłka e-maili – architektura async
 
@@ -162,15 +186,19 @@ Każda wysyłka zapisuje log do `emails/<timestamp>_<customer_id>.txt` z treści
 
 ---
 
+
+
 ## Wdrożenie
 
 **Lokalnie (POC/demo):** `streamlit run app.py` → dostępne pod `http://localhost:8501`
 
-**Sieć firmowa (małe firmy):** uruchom na jednym komputerze w sieci lokalnej – pracownicy wchodzą przez `http://<IP>:8501`. Ollama działa jako lokalny serwer LLM dostępny w sieci.
+**Sieć firmowa (małe firmy):** uruchom na jednym komputerze w sieci lokalnej – pracownicy wchodzą przez `http://<IP>:8501`. Bielik (Ollama) działa na tym samym komputerze i jest wywoływany lokalnie (`localhost:11434`) – pracownicy łączą się tylko ze Streamlitem, nigdy bezpośrednio z modelem.
 
-**Produkcja:** architektura modułowa pozwala na migrację bez przepisywania kodu – Streamlit na VPS, Ollama API za nginxem, modele ML na osobnym serwisie.
+**Produkcja:** architektura modułowa pozwala na migrację bez przepisywania kodu – aplikację uruchamia się na serwerze w chmurze (VPS), a wybór modelu LLM pozostaje bez zmian. Przy wymogu pełnej lokalności danych Bielik może działać także w produkcji, ale przy większym obciążeniu wymaga kilku maszyn i load balancera (jedna instancja Ollamy obsługuje jedno zapytanie naraz) – to wyższy koszt niż przy OpenAI.
 
 ---
+
+
 
 ## Status projektu
 
@@ -185,4 +213,4 @@ Każda wysyłka zapisuje log do `emails/<timestamp>_<customer_id>.txt` z treści
 - [x] Dopasowanie kampanii marketingowej (RAG + Chroma) z załącznikiem PDF
 - [x] Podgląd statusu wysyłki e-maili na żywo w UI
 - [x] Notebook trenowania modelu z pobieraniem danych z Kaggle
-- [ ] Prezentacja końcowa
+- [x] Prezentacja końcowa

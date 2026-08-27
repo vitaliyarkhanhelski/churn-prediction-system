@@ -44,6 +44,8 @@ from prompts import (
     PRODUCTS_NUMBER_CONTEXT,
     PREPARE_MAIL_HUMAN,
     PREPARE_MAIL_SYSTEM,
+    SUMMARIZE_CHUNK_TEMPLATE,
+    SUMMARIZE_FINAL_TEMPLATE,
 )
 
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
@@ -104,7 +106,10 @@ OPENAI_MODEL = "gpt-4o"
 def _get_model(backend: str, temperature: float = 0):
     if backend == "ollama":
         from langchain_ollama import ChatOllama
-        return ChatOllama(model=OLLAMA_MODEL, temperature=temperature)
+        # num_ctx=8192 – Ollama domyślnie tnie okno kontekstowe do 2048 tokenów i robi to
+        # PO CICHU (bez błędu), więc przy większych fragmentach model dostawałby sam początek
+        # tekstu. 8192 to okno Bielika 11B v2.3.
+        return ChatOllama(model=OLLAMA_MODEL, temperature=temperature, num_ctx=8192)
     return init_chat_model(model=OPENAI_MODEL, temperature=temperature)
 
 
@@ -174,7 +179,6 @@ class StanGrafu(TypedDict):
     
     # Zmienne RAG
     messages:                 Annotated[list[AnyMessage], add_messages]
-    camp_source:              set
     from_summarizer:          str
     campaigns:                 list[dict]
     chosen_campaign_source:    str
@@ -333,15 +337,25 @@ def _make_nodes(model_backend):
                             loader = Docx2txtLoader(f"{file_name}")
                             chunk_text = ""
                             doc = loader.load()
-                            splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
+                            # chunk_size=12000 znaków (~4 200 tokenów): każdy z 10 dokumentów
+                            # kampanii dzieli się równo na 2 kawałki → 3 wywołania LLM zamiast 21.
+                            # Zostaje ~4 000 tokenów zapasu w oknie Bielika (8192) na odpowiedź.
+                            # overlap=200 – bez niego drugi kawałek zaczyna się w środku
+                            # wypunktowania, bez nagłówka mówiącego, czego lista dotyczy.
+                            splitter = RecursiveCharacterTextSplitter(chunk_size=12000, chunk_overlap=200)
                             chunks = splitter.split_documents(doc)
 
+                            # Testowano streszczanie na Bieliku (model_low) – treść była poprawna,
+                            # ale format nie: prefiks "Streszczenie tekstu:" mimo zakazu w prompcie
+                            # (4/4 kampanie), lista numerowana zamiast prozy, a przy dokumencie
+                            # dzielonym na 2 kawałki etap scalający zwrócił DWA streszczenia obok
+                            # siebie zamiast jednego. Zostaje OpenAI.
                             for chunk in chunks:
-                                prompt = ChatPromptTemplate.from_template("Streść tekst kampanii, cel i założenia:\n{chunk}")
+                                prompt = ChatPromptTemplate.from_template(SUMMARIZE_CHUNK_TEMPLATE)
                                 chain = _retryable(prompt | model_for_rag | StrOutputParser())
                                 chunk_text += chain.invoke({"chunk": chunk.page_content})
 
-                            prompt_sum = ChatPromptTemplate.from_template("Streść maksymalnie w 5 zdaniach podany tekst, skup się na celu kampanii dla opiekuna klienta:\n{tekst}")
+                            prompt_sum = ChatPromptTemplate.from_template(SUMMARIZE_FINAL_TEMPLATE)
                             chain_sum = _retryable(prompt_sum | model_for_rag | StrOutputParser())
                             summary = chain_sum.invoke({"tekst": chunk_text})
 
@@ -359,7 +373,6 @@ def _make_nodes(model_backend):
             text_to_body = "Brak specyficznej kampanii w bazie. Zaproponuj standardowe kroki retencyjne."
 
         return {
-            "camp_source": set(source_list),
             "from_summarizer": text_to_body.strip(),
             "campaigns": campaigns,
         }
@@ -419,7 +432,7 @@ def _make_nodes(model_backend):
             "customer_id":       stan["customer_id"],
             "churn_probability": f"{stan['churn_probability']:.1%}",
             "data_work":         stan["data_work"],
-            "from_summarizer":   stan["chosen_campaign_summary"]
+            "chosen_campaign":   stan["chosen_campaign_summary"]
         }))
 
         # Kampania wybrana jest deterministycznie w choose_campaign (przed tym węzłem),
@@ -563,7 +576,6 @@ def run_agent(df_flagged: pd.DataFrame, to_email: str, model_backend: str = "ope
                 "mail_body":         "",
                 "subject":           "",
                 "messages":          [],
-                "camp_source":              set(),
                 "from_summarizer":          "",
                 "campaigns":                [],
                 "chosen_campaign_source":   "",

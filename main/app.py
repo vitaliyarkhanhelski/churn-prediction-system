@@ -97,7 +97,7 @@ with st.sidebar:
         st.caption("⚡ 2 e-maile jednocześnie · szybszy niż Bielik · wymaga klucza OpenAI")
 
     st.markdown("---")
-    st.caption("v0.3 – POC")
+    st.caption("v1.0 – POC")
 
 # --- Header ---
 st.title("🎯 System Predykcji Odpływu Klientów")

@@ -121,7 +121,16 @@ Analiza przyczyn (skopiuj te punkty słowo w słowo):
 {data_work}
 
 Dopasowana kampania marketingowa (streść w sekcji "Rekomendowana kampania retencyjna"):
-{from_summarizer}"""
+{chosen_campaign}"""
+
+# Streszczanie kampanii przebiega dwuetapowo (map-reduce): najpierw streszczany jest każdy
+# fragment dokumentu osobno, potem sklejone streszczenia są streszczane jeszcze raz.
+SUMMARIZE_CHUNK_TEMPLATE = """Streść w maksymalnie 5 zdaniach tekst kampanii, jej cel i założenia. \
+Odpowiedz samym streszczeniem – bez nagłówków, list i wstępów typu "Streszczenie tekstu:".
+{chunk}"""
+
+SUMMARIZE_FINAL_TEMPLATE = """Streść maksymalnie w 5 zdaniach podany tekst, skup się na celu kampanii dla opiekuna klienta:
+{tekst}"""
 
 AGENT_RAG_SYSTEM = """Jesteś doradcą działu handlowego. Masz wyszukać w bazie kampanii \
 marketingowych kampanii odpowiednich do zapobiegania odejściu klienta na podstawie jego cech ryzyka. \
